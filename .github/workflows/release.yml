@@ -113,9 +113,13 @@ jobs:
           yes | "$SDKM" --licenses > /dev/null 2>&1 || true
           "$SDKM" --install "platform-tools" "platforms;android-36" "build-tools;36.0.0" "ndk;28.2.13676358"
           echo "NDK_HOME=$SDK/ndk/28.2.13676358" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$SDK/ndk/28.2.13676358" >> "$GITHUB_ENV"
           ls "$SDK/ndk"
           # 插件引擎（rquickjs-sys）用 libclang 生成 Android 绑定，CI 默认没设 LIBCLANG_PATH
-          LIBCLANG_DIR="$(find /usr/lib /usr/local/lib -name 'libclang.so*' -printf '%h\n' 2>/dev/null | head -1)"
+          LIBCLANG_DIR="$(find /usr/lib /usr/local/lib -name 'libclang*.so*' -printf '%h\n' 2>/dev/null | head -1)"
+          if [ -z "$LIBCLANG_DIR" ]; then
+            LIBCLANG_DIR="$(llvm-config --libdir 2>/dev/null || true)"
+          fi
           if [ -n "$LIBCLANG_DIR" ]; then
             echo "LIBCLANG_PATH=$LIBCLANG_DIR" >> "$GITHUB_ENV"
             echo "libclang: $LIBCLANG_DIR"
@@ -150,6 +154,11 @@ jobs:
       # 没配 keystore：Gradle 用自带 debug keystore 自动签名，APK 可直接安装
       - name: 编译 debug APK
         if: steps.signing.outputs.has_keystore != 'true'
+        env:
+          # bindgen 默认只给 clang 传 aarch64-linux-android（无 API 版本），
+          # NDK 的 sys/cdefs.h 会报 "Unversioned target triples are not supported!"。
+          # 这里补成版本化 target + API 宏，24 与 tauri.conf.json 的 minSdkVersion 一致。
+          BINDGEN_EXTRA_CLANG_ARGS: "--target=aarch64-linux-android24 -D__ANDROID_API__=24"
         run: pnpm tauri android build --debug --target aarch64 --apk --ci
 
       - name: 收集 debug APK
